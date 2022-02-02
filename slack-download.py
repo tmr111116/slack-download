@@ -1,41 +1,55 @@
+from datetime import datetime
+import os
 import requests
 import json
 import os.path
 
-def fileDownload():
-    print('fileDownloading...')
-    # レガシートークン( 参考：https://api.slack.com/custom-integrations/legacy-tokens )
-    LEGACYTOKEN = "ここにいれてね"
+def files_list(files_dir, token, page):
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://slack.com/api/files.list?pretty=1&page={page}"
+    result = requests.get(url, headers=headers)
+    files_json = result.text
+    with open(f"{files_dir}/_index_p{page}.json", 'w') as f:
+      f.write(files_json)
+    data = json.loads(files_json)
+    return data
 
-    # UnixTimeで記述, 入れなければ全期間( 参考：https://tool.konisimple.net/date/unixtime )
-    DATE_FROM = ""
-    DATE_TO = ""
+def download_files(files_dir, token, files):
+    headers = {"Authorization": f"Bearer {token}"}
 
-    url = "https://slack.com/api/files.list?token=" + LEGACYTOKEN + "&ts_from=" + DATE_FROM + "&ts_to=" + DATE_TO + "&pretty=1"
-
-    result = requests.get(url)
-
-    data = json.loads(result.text)
-
-    # ファイルをダウンロードするためのヘッダー
-    headers = {'Authorization': 'Bearer ' + LEGACYTOKEN}
-    count = 0
-    for file in data["files"]:
-        file_name = file["name"]
+    for file in files:
+        file_name = f"{files_dir}/{file['id']}_{file['name']}"
+        print(f"dowonload '{file_name}'")
         if not "url_private_download" in file:
+            print("url_private_download がないのでスキップ")
+            print(json.dumps(file))
             continue
         file_url = file["url_private_download"]
         # 同じファイル名の物があると上書きされてしまうため存在を確認する
         if os.path.exists(file_name):
             print("重複しました")
-            count = count + 1
-            insert_point = file_name.find(".")
-            insert_string = "(" + str(count) + ")"
-            file_name = '{0}{1}{2}'.format(file_name[:insert_point], insert_string, file_name[insert_point:])
+            continue
         response = requests.get(file_url, headers=headers)
         with open(file_name, 'wb') as f:
             # ファイルを保存する
             f.write(response.content)
+
+def fileDownload():
+    TOKEN = os.environ["TOKEN"]
+
+    dir_name = datetime.now().isoformat(' ', 'seconds')
+    files_dir = f"download_files/{dir_name}"
+    os.mkdir(files_dir)
+
+    pages = 999
+    page = 1
+    while page <= pages:
+      print(f"file.list page {page}")
+      data = files_list(files_dir, TOKEN, page)
+      print(json.dumps(data["paging"]))
+      pages = data["paging"]["pages"]
+      page += 1
+      download_files(files_dir, TOKEN, data["files"])
 
 if __name__ == '__main__':
     fileDownload()
